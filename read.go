@@ -44,7 +44,7 @@
 // the package. Equally important, traversal of other PDF data structures can be implemented
 // in other packages as needed.
 //
-package pdf // import "rsc.io/pdf"
+package pdf
 
 // BUG(rsc): The package is incomplete, although it has been used successfully on some
 // large real-world PDF files.
@@ -93,8 +93,24 @@ type xref struct {
 	offset   int64
 }
 
+func (x *xref) Ptr() objptr {
+	return x.ptr
+}
+
+func (x *xref) Stream() objptr {
+	return x.stream
+}
+
+func GetDict() dict {
+	return dict{}
+}
+
 func (r *Reader) errorf(format string, args ...interface{}) {
 	panic(fmt.Errorf(format, args...))
+}
+
+func (r *Reader) Xref() []xref {
+	return r.xref
 }
 
 // Open opens a file for reading.
@@ -703,6 +719,10 @@ func (v Value) Len() int {
 		return 0
 	}
 	return len(x)
+}
+
+func (r *Reader) Resolve(parent objptr, x interface{}) Value {
+	return r.resolve(parent, x)
 }
 
 func (r *Reader) resolve(parent objptr, x interface{}) Value {
