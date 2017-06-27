@@ -73,17 +73,45 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"log"
 )
 
 // A Reader is a single PDF file open for reading.
 type Reader struct {
-	f          io.ReaderAt
-	end        int64
-	xref       []xref
-	trailer    dict
-	trailerptr objptr
-	key        []byte
-	useAES     bool
+	f               io.ReaderAt
+	end             int64
+	xref            []xref
+	trailer         dict
+	trailerptr      objptr
+	key             []byte
+	useAES          bool
+	XrefInformation ReaderXrefInformation
+}
+
+type ReaderXrefInformation struct {
+	StartPos               int64
+	EndPos                 int64
+	Length                 int64
+	PositionLength         int64
+	PositionStartPos       int64
+	PositionEndPos         int64
+	ItemCount              int64
+	Type                   string
+	IncludingTrailerEndPos int64
+	IncludingTrailerLength int64
+}
+
+func (info *ReaderXrefInformation) PrintDebug() {
+	log.Printf("Start of xref position bytes: %d", info.PositionStartPos)
+	log.Printf("Length of xref position bytes: %d", info.PositionLength)
+	log.Printf("End of xref position bytes: %d", info.PositionEndPos)
+	log.Printf("xref start position byte: %d", info.StartPos)
+	log.Printf("xref end position byte: %d", info.EndPos)
+	log.Printf("xref length in bytes: %d", info.Length)
+	log.Printf("xref type: %s", info.Type)
+	log.Printf("Amount of items in xref: %d", info.ItemCount)
+	log.Printf("xref end (including trailer) position byte: %d", info.IncludingTrailerEndPos)
+	log.Printf("xref length (including trailer) in bytes: %d", info.IncludingTrailerLength)
 }
 
 type xref struct {
@@ -160,18 +188,34 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 	}
 
 	r := &Reader{
-		f:   f,
-		end: end,
+		f:               f,
+		end:             end,
+		XrefInformation: ReaderXrefInformation{},
 	}
 	pos := end - endChunk + int64(i)
+
+	// Save the position of the startxref element.
+	r.XrefInformation.PositionStartPos = pos
+
 	b := newBuffer(io.NewSectionReader(f, pos, end-pos), pos)
 	if b.readToken() != keyword("startxref") {
 		return nil, fmt.Errorf("malformed PDF file: missing startxref")
 	}
+
 	startxref, ok := b.readToken().(int64)
 	if !ok {
 		return nil, fmt.Errorf("malformed PDF file: startxref not followed by integer")
 	}
+
+	// Save length. Useful for calculations later on.
+	r.XrefInformation.PositionLength = int64(b.pos) + 1
+
+	// Save end position. Add 1 for the newline character.
+	r.XrefInformation.PositionEndPos = r.XrefInformation.PositionStartPos + r.XrefInformation.PositionLength
+
+	// Save start position of xref.
+	r.XrefInformation.StartPos = startxref
+
 	b = newBuffer(io.NewSectionReader(r.f, startxref, r.end-startxref), startxref)
 	xref, trailerptr, trailer, err := readXref(r, b)
 	if err != nil {
@@ -367,6 +411,15 @@ func readXrefTable(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 		return nil, objptr{}, nil, fmt.Errorf("malformed PDF: %v", err)
 	}
 
+	// Get length of trailer keyword and newline.
+	trailer_length := int64(len(keyword("trailer"))) + 1
+
+	// Save end position.
+	r.XrefInformation.EndPos = (r.XrefInformation.StartPos - trailer_length) + int64(b.pos)
+
+	// Save length position. Useful for calculations. Remove trailer keyword length, add 1 for newline.
+	r.XrefInformation.Length = (int64(b.pos) - trailer_length) + 1
+
 	trailer, ok := b.readObject().(dict)
 	if !ok {
 		return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref table not followed by trailer dictionary")
@@ -402,6 +455,18 @@ func readXrefTable(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 	if size < int64(len(table)) {
 		table = table[:size]
 	}
+
+	// Save the xref type. Useful for adding data to it.
+	r.XrefInformation.Type = "table"
+
+	// Save the amount of items in the table. Useful for generating a new id for the signature.
+	r.XrefInformation.ItemCount = int64(len(table))
+
+	// Save end position. Note that this is including the trailer and startxref (without value).
+	r.XrefInformation.IncludingTrailerEndPos = r.XrefInformation.StartPos + int64(b.pos)
+
+	// Save length position. Useful for calculations.
+	r.XrefInformation.IncludingTrailerLength = int64(b.pos) + 1
 
 	return table, objptr{}, trailer, nil
 }
