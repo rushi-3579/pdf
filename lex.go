@@ -404,6 +404,14 @@ type objptr struct {
 	gen uint16
 }
 
+func (o *objptr) GetID() uint32 {
+	return o.id
+}
+
+func (o *objptr) GetGen() uint16 {
+	return o.gen
+}
+
 type objdef struct {
 	ptr objptr
 	obj object

@@ -70,10 +70,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"sort"
 	"strconv"
-	"log"
 )
 
 // A Reader is a single PDF file open for reading.
@@ -86,6 +86,7 @@ type Reader struct {
 	key             []byte
 	useAES          bool
 	XrefInformation ReaderXrefInformation
+	PDFVersion      string
 }
 
 type ReaderXrefInformation struct {
@@ -171,6 +172,9 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 	if !bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7' || buf[8] != '\r' && buf[8] != '\n' {
 		return nil, fmt.Errorf("not a PDF file: invalid header")
 	}
+
+	version := buf[5:8]
+
 	end := size
 	const endChunk = 100
 	buf = make([]byte, endChunk)
@@ -191,6 +195,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 		f:               f,
 		end:             end,
 		XrefInformation: ReaderXrefInformation{},
+		PDFVersion:      string(version),
 	}
 	pos := end - endChunk + int64(i)
 
@@ -532,6 +537,10 @@ func (v Value) IsNull() bool {
 	return v.data == nil
 }
 
+func (v Value) RawData() interface{} {
+	return v.data
+}
+
 // A ValueKind specifies the kind of data underlying a Value.
 type ValueKind int
 
@@ -745,6 +754,10 @@ func (v Value) Key(key string) Value {
 	return v.r.resolve(v.ptr, x[name(key)])
 }
 
+func (v Value) GetPtr() objptr {
+	return v.ptr
+}
+
 // Keys returns a sorted list of the keys in the dictionary v.
 // If v is a stream, Keys applies to the stream's header dictionary.
 // If v.Kind() != Dict and v.Kind() != Stream, Keys returns nil.
@@ -836,6 +849,7 @@ func (r *Reader) resolve(parent objptr, x interface{}) Value {
 			b := newBuffer(io.NewSectionReader(r.f, xref.offset, r.end-xref.offset), xref.offset)
 			b.key = r.key
 			b.useAES = r.useAES
+
 			obj = b.readObject()
 			def, ok := obj.(objdef)
 			if !ok {
