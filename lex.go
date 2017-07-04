@@ -36,6 +36,7 @@ type buffer struct {
 	r           io.Reader // source of data
 	buf         []byte    // buffered data
 	pos         int       // read index in buf
+	realPos     int64     // read index in file
 	offset      int64     // offset at end of buf; aka offset of next read
 	tmp         []byte    // scratch space for accumulating token
 	unread      []token   // queue of read but then unread tokens
@@ -63,6 +64,7 @@ func (b *buffer) seek(offset int64) {
 	b.offset = offset
 	b.buf = b.buf[:0]
 	b.pos = 0
+	b.realPos = 0
 	b.unread = b.unread[:0]
 }
 
@@ -75,6 +77,7 @@ func (b *buffer) readByte() byte {
 	}
 	c := b.buf[b.pos]
 	b.pos++
+	b.realPos++
 	return c
 }
 
@@ -88,6 +91,7 @@ func (b *buffer) reload() bool {
 	if n == 0 && err != nil {
 		b.buf = b.buf[:0]
 		b.pos = 0
+		b.realPos = 0
 		if b.allowEOF && err == io.EOF {
 			b.eof = true
 			return false
@@ -117,6 +121,7 @@ func (b *buffer) readOffset() int64 {
 func (b *buffer) unreadByte() {
 	if b.pos > 0 {
 		b.pos--
+		b.realPos--
 	}
 }
 

@@ -213,7 +213,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 	}
 
 	// Save length. Useful for calculations later on.
-	r.XrefInformation.PositionLength = int64(b.pos) + 1
+	r.XrefInformation.PositionLength = b.realPos + 1
 
 	// Save end position. Add 1 for the newline character.
 	r.XrefInformation.PositionEndPos = r.XrefInformation.PositionStartPos + r.XrefInformation.PositionLength
@@ -420,10 +420,10 @@ func readXrefTable(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 	trailer_length := int64(len(keyword("trailer"))) + 1
 
 	// Save end position.
-	r.XrefInformation.EndPos = (r.XrefInformation.StartPos - trailer_length) + int64(b.pos)
+	r.XrefInformation.EndPos = (r.XrefInformation.StartPos - trailer_length) + b.realPos
 
 	// Save length position. Useful for calculations. Remove trailer keyword length, add 1 for newline.
-	r.XrefInformation.Length = (int64(b.pos) - trailer_length) + 1
+	r.XrefInformation.Length = (b.realPos - trailer_length) + 1
 
 	trailer, ok := b.readObject().(dict)
 	if !ok {
@@ -468,10 +468,10 @@ func readXrefTable(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 	r.XrefInformation.ItemCount = int64(len(table))
 
 	// Save end position. Note that this is including the trailer and startxref (without value).
-	r.XrefInformation.IncludingTrailerEndPos = r.XrefInformation.StartPos + int64(b.pos)
+	r.XrefInformation.IncludingTrailerEndPos = r.XrefInformation.StartPos + b.realPos
 
 	// Save length position. Useful for calculations.
-	r.XrefInformation.IncludingTrailerLength = int64(b.pos) + 1
+	r.XrefInformation.IncludingTrailerLength = b.realPos + 1
 
 	return table, objptr{}, trailer, nil
 }
