@@ -286,6 +286,7 @@ func readXrefStream(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 	if !ok {
 		return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref stream missing Size")
 	}
+
 	table := make([]xref, size)
 
 	table, err := readXrefStreamData(r, strm, table, size)
@@ -324,6 +325,12 @@ func readXrefStream(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 			return nil, objptr{}, nil, fmt.Errorf("malformed PDF: reading xref prev stream: %v", err)
 		}
 	}
+
+	// Save the xref type. Useful for adding data to it.
+	r.XrefInformation.Type = "stream"
+	r.XrefInformation.ItemCount = size
+
+	r.XrefInformation.ItemCount = int64(len(table))
 
 	return table, strmptr, strm.hdr, nil
 }
@@ -372,6 +379,7 @@ func readXrefStreamData(r *Reader, strm stream, table []xref, size int64) ([]xre
 			if err != nil {
 				return nil, fmt.Errorf("error reading xref stream: %v", err)
 			}
+
 			v1 := decodeInt(buf[0:w[0]])
 			if w[0] == 0 {
 				v1 = 1
