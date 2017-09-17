@@ -183,6 +183,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 	EOFDetect:
 	for {
 		buf = make([]byte, searchSize)
+
 		f.ReadAt(buf, end-searchSize)
 		for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
 			buf = buf[:len(buf)-1]
@@ -207,6 +208,12 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 		}
 	}
 
+	eofPosition := len(buf)
+
+	// Read 200 bytes before the %%EOF.
+	buf = make([]byte, int64(200))
+	f.ReadAt(buf, end - (searchSize - int64(eofPosition)) - 200)
+
 	i := findLastLine(buf, "startxref")
 	if i < 0 {
 		return nil, fmt.Errorf("malformed PDF file: missing final startxref")
@@ -218,12 +225,13 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 		XrefInformation: ReaderXrefInformation{},
 		PDFVersion:      string(version),
 	}
-	pos := end - searchSize + int64(i)
+	pos := (end - (searchSize - int64(eofPosition)) - 200) + int64(i)
 
 	// Save the position of the startxref element.
 	r.XrefInformation.PositionStartPos = pos
 
 	b := newBuffer(io.NewSectionReader(f, pos, end-pos), pos)
+
 	if b.readToken() != keyword("startxref") {
 		return nil, fmt.Errorf("malformed PDF file: missing startxref")
 	}
