@@ -428,11 +428,15 @@ func (b *buffer) readObject() object {
 		switch kw {
 		case "null":
 			return nil
+		case "endobj":
+			b.unreadToken(tok)
+			return nil
 		case "<<":
 			return b.readDict()
 		case "[":
 			return b.readArray()
 		}
+
 		b.errorf("unexpected keyword %q parsing object", kw)
 		return nil
 	}

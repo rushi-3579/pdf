@@ -176,24 +176,37 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 	version := buf[5:8]
 
 	end := size
-	const endChunk = 250
-	buf = make([]byte, endChunk)
-	f.ReadAt(buf, end-endChunk)
-	for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
-		buf = buf[:len(buf)-1]
-	}
-	buf = bytes.TrimRight(buf, "\r\n\t ")
+
+	// Some PDF's are quite broken and have a lot of stuff after %%EOF.
+	searchSize := int64(200)
+
+	EOFDetect:
 	for {
-		if len(buf) == 5 {
+		buf = make([]byte, searchSize)
+		f.ReadAt(buf, end-searchSize)
+		for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
+			buf = buf[:len(buf)-1]
+		}
+		buf = bytes.TrimRight(buf, "\r\n\t ")
+		for {
+			if len(buf) == 5 {
+				break;
+			}
+
+			if bytes.HasSuffix(buf, []byte("%%EOF")) {
+				break EOFDetect;
+			}
+
+			buf = buf[0:len(buf)-1]
+		}
+
+		searchSize += 200
+
+		if searchSize > end {
 			return nil, fmt.Errorf("not a PDF file: missing %%%%EOF")
 		}
-
-		if bytes.HasSuffix(buf, []byte("%%EOF")) {
-			break;
-		}
-
-		buf = buf[0:len(buf)-1]
 	}
+
 	i := findLastLine(buf, "startxref")
 	if i < 0 {
 		return nil, fmt.Errorf("malformed PDF file: missing final startxref")
@@ -205,7 +218,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 		XrefInformation: ReaderXrefInformation{},
 		PDFVersion:      string(version),
 	}
-	pos := end - endChunk + int64(i)
+	pos := end - searchSize + int64(i)
 
 	// Save the position of the startxref element.
 	r.XrefInformation.PositionStartPos = pos
@@ -519,6 +532,7 @@ func readXrefTableData(b *buffer, table []xref) ([]xref, error) {
 		}
 		start, ok1 := tok.(int64)
 		n, ok2 := b.readToken().(int64)
+
 		if !ok1 || !ok2 {
 			return nil, fmt.Errorf("malformed xref table")
 		}
