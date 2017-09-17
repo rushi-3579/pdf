@@ -169,22 +169,30 @@ func NewReader(f io.ReaderAt, size int64) (*Reader, error) {
 func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, error) {
 	buf := make([]byte, 10)
 	f.ReadAt(buf, 0)
-	if !bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7' || buf[8] != '\r' && buf[8] != '\n' {
+	if !bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7' {
 		return nil, fmt.Errorf("not a PDF file: invalid header")
 	}
 
 	version := buf[5:8]
 
 	end := size
-	const endChunk = 100
+	const endChunk = 250
 	buf = make([]byte, endChunk)
 	f.ReadAt(buf, end-endChunk)
 	for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
 		buf = buf[:len(buf)-1]
 	}
 	buf = bytes.TrimRight(buf, "\r\n\t ")
-	if !bytes.HasSuffix(buf, []byte("%%EOF")) {
-		return nil, fmt.Errorf("not a PDF file: missing %%%%EOF")
+	for {
+		if len(buf) == 5 {
+			return nil, fmt.Errorf("not a PDF file: missing %%%%EOF")
+		}
+
+		if bytes.HasSuffix(buf, []byte("%%EOF")) {
+			break;
+		}
+
+		buf = buf[0:len(buf)-1]
 	}
 	i := findLastLine(buf, "startxref")
 	if i < 0 {
@@ -294,11 +302,20 @@ func readXrefStream(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 		return nil, objptr{}, nil, fmt.Errorf("malformed PDF: %v", err)
 	}
 
+	seenPrev := map[int64]bool{}
+
 	for prevoff := strm.hdr["Prev"]; prevoff != nil; {
 		off, ok := prevoff.(int64)
 		if !ok {
 			return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref Prev is not integer: %v", prevoff)
 		}
+
+		if _, ok := seenPrev[off]; ok {
+			return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref Prev loop detected: %v", off)
+		}
+
+		seenPrev[off] = true
+
 		b := newBuffer(io.NewSectionReader(r.f, off, r.end-off), off)
 		obj1 := b.readObject()
 		obj, ok := obj1.(objdef)
@@ -384,6 +401,7 @@ func readXrefStreamData(r *Reader, strm stream, table []xref, size int64) ([]xre
 			if w[0] == 0 {
 				v1 = 1
 			}
+
 			v2 := decodeInt(buf[w[0] : w[0]+w[1]])
 			v3 := decodeInt(buf[w[0]+w[1] : w[0]+w[1]+w[2]])
 			x := int(start) + i
@@ -438,11 +456,20 @@ func readXrefTable(r *Reader, b *buffer) ([]xref, objptr, dict, error) {
 		return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref table not followed by trailer dictionary")
 	}
 
+	seenPrev := map[int64]bool{}
+
 	for prevoff := trailer["Prev"]; prevoff != nil; {
 		off, ok := prevoff.(int64)
 		if !ok {
 			return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref Prev is not integer: %v", prevoff)
 		}
+
+		if _, ok := seenPrev[off]; ok {
+			return nil, objptr{}, nil, fmt.Errorf("malformed PDF: xref Prev loop detected: %v", off)
+		}
+
+		seenPrev[off] = true
+
 		b := newBuffer(io.NewSectionReader(r.f, off, r.end-off), off)
 		tok := b.readToken()
 		if tok != keyword("xref") {
