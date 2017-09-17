@@ -179,12 +179,13 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 
 	// Some PDF's are quite broken and have a lot of stuff after %%EOF.
 	searchSize := int64(200)
+	searchSizeRead := int(0)
 
 	EOFDetect:
 	for {
 		buf = make([]byte, searchSize)
 
-		f.ReadAt(buf, end-searchSize)
+		searchSizeRead, _ = f.ReadAt(buf, end-searchSize)
 		for len(buf) > 0 && buf[len(buf)-1] == '\n' || buf[len(buf)-1] == '\r' {
 			buf = buf[:len(buf)-1]
 		}
@@ -212,7 +213,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 
 	// Read 200 bytes before the %%EOF.
 	buf = make([]byte, int64(200))
-	f.ReadAt(buf, end - (searchSize - int64(eofPosition)) - 200)
+	f.ReadAt(buf, end - (int64(searchSizeRead) - int64(eofPosition)) - int64(len(buf)))
 
 	i := findLastLine(buf, "startxref")
 	if i < 0 {
@@ -225,7 +226,7 @@ func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, e
 		XrefInformation: ReaderXrefInformation{},
 		PDFVersion:      string(version),
 	}
-	pos := (end - (searchSize - int64(eofPosition)) - 200) + int64(i)
+	pos := (end - (int64(searchSizeRead) - int64(eofPosition)) - int64(len(buf))) + int64(i)
 
 	// Save the position of the startxref element.
 	r.XrefInformation.PositionStartPos = pos
