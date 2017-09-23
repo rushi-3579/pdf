@@ -169,7 +169,7 @@ func NewReader(f io.ReaderAt, size int64) (*Reader, error) {
 func NewReaderEncrypted(f io.ReaderAt, size int64, pw func() string) (*Reader, error) {
 	buf := make([]byte, 10)
 	f.ReadAt(buf, 0)
-	if !bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7' {
+	if (!bytes.HasPrefix(buf, []byte("%PDF-1.")) || buf[7] < '0' || buf[7] > '7') && (!bytes.HasPrefix(buf, []byte("%PDF-2.")) || buf[7] < '0' || buf[7] > '0') {
 		return nil, fmt.Errorf("not a PDF file: invalid header")
 	}
 
